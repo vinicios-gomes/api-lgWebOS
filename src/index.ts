@@ -1,12 +1,15 @@
 import type { Express } from "express";
 import express from "express";
 import lgtv from "lgtv2";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const TV_LOCAL_IP = process.env.TV_LOCAL_IP;
 const TV_LOCAL_PORT = process.env.TV_LOCAL_PORT;
 
 const con = lgtv({
-  url: `ws://:${TV_LOCAL_IP}:${TV_LOCAL_PORT}`,
+  url: `ws://${TV_LOCAL_IP}:${TV_LOCAL_PORT}`,
   timeout: 5000,
   reconnect: 10000,
   keyFile: "./lgtvkeyfile",
@@ -14,6 +17,7 @@ const con = lgtv({
 
 const app: Express = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use("/vol-up", (req, response) => {
   con.request("ssap://audio/volumeUp", (err: Error, res: any) => {
@@ -64,11 +68,11 @@ app.use("/list-app-ids", (req, response) => {
   });
 });
 
-app.use("/notifications", (req, response) => {
-  const { message } = req.body;
+app.use("/message", (req, response) => {
+  const { text } = req.body;
   con.request(
     "ssap://system.notifications/createToast",
-    { message },
+    { message: text },
     (err, result) => {
       if (err) {
         response.status(500).send("Error");
@@ -89,6 +93,21 @@ app.use("/service-list", (req, response) => {
     }
   });
 });
+
+app.use("/teste", (req, response) => {
+  con.request("luna://com.webos.service.wifi/getstatus", (err, sock) => {
+    if (err) {
+      console.log("ERROR");
+      return response.status(500).send();
+    }
+    console.log("OK");
+    // const command =
+    //   "move\n" + "dx:" + 10 + "\n" + "dy:-10\n" + "down:0\n" + "\n";
+    // sock.send(command);
+    response.status(200).send(sock);
+  });
+});
+
 app.use("/control", (req, response) => {
   const { buttonName } = req.body;
 
@@ -152,6 +171,30 @@ app.use("/vol-down", (req, response) => {
     }
   });
 });
+app.use("/vol", (req, response) => {
+  const { value } = req.query;
+  con.request(
+    "ssap://audio/setVolume",
+    {
+      volume: Number(value),
+    },
+    (error, result) => {
+      if (error) {
+        response.status(500).send();
+        return;
+      }
+
+      response.status(200).send(result);
+      return;
+    }
+  );
+  // response.status(200).send("volume seted");
+});
+app.use("/open-app", (req, response) => {
+  const { appId } = req.query;
+  con.request("ssap://system.launcher/launch", { id: appId });
+  response.status(200).send(`App ${appId} opened`);
+});
 
 app.listen(3000, () => {
   con.on("connect", () => {
@@ -165,6 +208,11 @@ app.listen(3000, () => {
   con.on("prompt", () => {
     console.log("Please accept the connection on your TV");
   });
+
+  con.on("error", (err) => {
+    console.error("Error connecting to TV:", err);
+  });
+
   console.log("Server running on port 3000");
 });
 export default app;
